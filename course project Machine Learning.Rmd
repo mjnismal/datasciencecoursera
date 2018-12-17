@@ -1,0 +1,111 @@
+---
+title: "Course Project - Practical Machine Learning"
+output: html_document
+---
+###Background
+
+Using devices such as *Jawbone Up*, *Nike FuelBand*, and *Fitbit* it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+
+### Install the following packages:
+ * rpart - Classification and Regression Trees package
+ * randomForest - Random Forest Algorithm package
+ * tidyverse - Data Wrangling package
+ 
+```{r setup, echo=FALSE,include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(rattle)
+library(rpart)
+library(caret)
+library(tidyverse)
+library(knitr)
+library(randomForest)
+```
+
+
+### Import Training and Testing Data 
+```{r }
+train_dt = read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+test_dt = read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+
+str(train_dt)
+```
+
+```{r, include=FALSE}
+str(test_dt)
+```
+The **training data** contains 19,622 observations of 160 variables while the **testing data** had 20 observations of the same variables. 
+
+
+### Processing the data
+
+We have to clean the training data in order for us to create a workable predictive model. Let's check the contents first of the training dataset.
+```{r training,echo=FALSE}
+kable(summary(train_dt))
+
+
+```
+
+We see that there are a couple of variables with a high count of missing variables. We can try and omit these in order to proceed with the model training.  
+```{r}
+train_clean = train_dt %>% select(-X, -user_name)
+train_clean[,c(grep('kurt',names(train_clean),value=TRUE))]=NULL
+train_clean[,c(grep('skew',names(train_clean),value=TRUE))]=NULL
+train_clean[,c(grep('min.*',names(train_clean),value=TRUE))]=NULL
+train_clean[,c(grep('max.*',names(train_clean),value=TRUE))]=NULL
+train_clean[,c(grep('stddev.*',names(train_clean),value=TRUE))]=NULL
+train_clean[,c(grep('avg.*',names(train_clean),value=TRUE))]=NULL
+train_clean[,c(grep('var.*',names(train_clean),value=TRUE))]=NULL
+train_clean[,c(grep('amplitude.*',names(train_clean),value=TRUE))]=NULL
+
+train_clean$cvtd_timestamp = NULL
+
+   
+```
+We also omitted variables that are not really used for modelling such as user_name and the row number, X. We also removed cvtd_timestamp since we already have a timestamp variable.
+
+
+### Training and Validation data
+```{r}
+inTrain = createDataPartition(train_clean$classe, p = 3/4)[[1]]
+train_data = train_clean[inTrain,]
+valid_data = train_clean[-inTrain,]
+```
+Here we equally split the data based from the target variable into the training set(75% of the data) and the validation set (25% of the data). 
+
+From the names, we will use training set to build our model and to test the model, we will predict on the values in the validation set and compare the predicted class to the actual result and get our **out of sample accuracy** which will be our metric for predictive strength.  
+
+
+### Classification and Regression Trees (CART)
+We now have a clean dataset to create our model. First, let's try something that's more interpretable like a Classification Tree Model or CART Model. We are predicting what classe the movement is based on the other variables that is left in the dataset.
+```{r CART}
+rpart_model = rpart(classe~.,train_data,method="class")
+fancyRpartPlot(rpart_model)
+```
+Here we see the structure of the CART model and how it classifies based on the variables. 
+
+Now we check for the out-of-sample accuracy (by confusion matrix) where we use the validation dataset to predict the class and compare it to the actual result.
+```{r}
+confusionMatrix(predict(rpart_model,newdata= valid_data,type="class"),valid_data$classe) 
+```
+Predicting the validation dataset, we see that the accuracy of those prediction reached a 84.3% of correctly classified observations which is a significantly successful model in predicting the class.   
+
+Now we can try a better predictive but less interpretable model, the Random Forest.
+
+### Random Forest
+Random Forest is basically a lot of Classification Trees that takes a resampled dataset and votes on the classification of the observation.
+
+Let's make the model and check for the out-of-sample accuracy, similar to what we did with the CART model.
+```{r randoforest}
+rf_model = randomForest(classe~.,train_data)
+
+confusionMatrix(predict(rf_model,newdata=valid_data),valid_data$classe)
+``` 
+As we can see, it's almost unbelievably accurate for an out-of-sample prediction, with a 99.9% accuracy, having only misclassed 4 observations.
+
+With this highly accurate model, we can now start predicting the test dataset.
+```{r randoforest predict}
+levels(test_dt$new_window) = levels(train_dt$new_window)
+predict(rf_model,newdata=test_dt)
+
+``` 
